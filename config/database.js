@@ -1,5 +1,5 @@
-const mysql = require('mysql2');
-require('dotenv').config();
+const mysql = require("mysql2");
+require("dotenv").config();
 
 // Create connection pool
 const pool = mysql.createPool({
@@ -10,7 +10,7 @@ const pool = mysql.createPool({
   port: process.env.DB_PORT,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
 });
 
 // Get promise-based pool
@@ -19,10 +19,10 @@ const promisePool = pool.promise();
 // Test connection
 pool.getConnection((err, connection) => {
   if (err) {
-    console.error('❌ Database connection failed:', err.message);
+    console.error("❌ Database connection failed:", err.message);
     return;
   }
-  console.log('✅ Connected to MariaDB database');
+  console.log("✅ Connected to MariaDB database");
   connection.release();
 });
 

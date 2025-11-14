@@ -1,4 +1,4 @@
-const db = require('../config/database');
+const db = require("../config/database");
 
 // Get all competitions
 exports.getCompetitions = async (req, res) => {
@@ -6,19 +6,22 @@ exports.getCompetitions = async (req, res) => {
     const [rows] = await db.query(
       `SELECT 
         competitionID,
-        title,
-        location,
-        startDate,
-        endDate,
+        competitionTitle,
+        competitionStartDate,
+        competitionEndDate,
+        competitionVenue,
+        competitionCity,
+        competitionCountry,
+        competitionStatus,
         championshipID
       FROM competition
-      ORDER BY startDate DESC`
+      ORDER BY competitionStartDate DESC`
     );
 
     res.json(rows);
   } catch (error) {
-    console.error('Get competitions error:', error);
-    res.status(500).json({ error: 'Failed to fetch competitions' });
+    console.error("Get competitions error:", error);
+    res.status(500).json({ error: "Failed to fetch competitions" });
   }
 };
 
@@ -41,13 +44,13 @@ exports.getCompetitionById = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Competition not found' });
+      return res.status(404).json({ error: "Competition not found" });
     }
 
     res.json(rows[0]);
   } catch (error) {
-    console.error('Get competition error:', error);
-    res.status(500).json({ error: 'Failed to fetch competition' });
+    console.error("Get competition error:", error);
+    res.status(500).json({ error: "Failed to fetch competition" });
   }
 };
 
@@ -61,17 +64,17 @@ exports.getRoundsByCompetition = async (req, res) => {
         roundID,
         competitionID,
         roundType,
-        date
+        roundDate
       FROM round
       WHERE competitionID = ?
-      ORDER BY date`,
+      ORDER BY roundDate`,
       [competitionID]
     );
 
     res.json(rows);
   } catch (error) {
-    console.error('Get rounds error:', error);
-    res.status(500).json({ error: 'Failed to fetch rounds' });
+    console.error("Get rounds error:", error);
+    res.status(500).json({ error: "Failed to fetch rounds" });
   }
 };
 
@@ -96,13 +99,13 @@ exports.getRoundById = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Round not found' });
+      return res.status(404).json({ error: "Round not found" });
     }
 
     res.json(rows[0]);
   } catch (error) {
-    console.error('Get round error:', error);
-    res.status(500).json({ error: 'Failed to fetch round' });
+    console.error("Get round error:", error);
+    res.status(500).json({ error: "Failed to fetch round" });
   }
 };
 
@@ -117,20 +120,29 @@ exports.createArrowStaging = async (req, res) => {
       endOrder,
       arrowScore,
       stagingStatus,
-      isX
+      isX,
     } = req.body;
 
     const [result] = await db.query(
       `INSERT INTO arrowStaging 
        (roundID, participationID, recorderID, distance, endOrder, arrowScore, stagingStatus, isX, date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [roundID, participationID, recorderID, distance, endOrder, arrowScore, stagingStatus, isX]
+      [
+        roundID,
+        participationID,
+        recorderID,
+        distance,
+        endOrder,
+        arrowScore,
+        stagingStatus,
+        isX,
+      ]
     );
 
     res.json({ success: true, arrowStagingID: result.insertId });
   } catch (error) {
-    console.error('Create arrow staging error:', error);
-    res.status(500).json({ error: 'Failed to create arrow staging' });
+    console.error("Create arrow staging error:", error);
+    res.status(500).json({ error: "Failed to create arrow staging" });
   }
 };
 
@@ -159,25 +171,19 @@ exports.getArrowStaging = async (req, res) => {
 
     res.json(rows);
   } catch (error) {
-    console.error('Get arrow staging error:', error);
-    res.status(500).json({ error: 'Failed to fetch arrow staging' });
+    console.error("Get arrow staging error:", error);
+    res.status(500).json({ error: "Failed to fetch arrow staging" });
   }
 };
 
 // Create/Update round score
 exports.saveRoundScore = async (req, res) => {
   try {
-    const {
-      participationID,
-      roundID,
-      totalScore,
-      totalX,
-      totalTen
-    } = req.body;
+    const { participationID, roundID, totalScore, totalX, totalTen } = req.body;
 
     // Check if exists
     const [existing] = await db.query(
-      'SELECT roundScoreID FROM roundScore WHERE participationID = ? AND roundID = ?',
+      "SELECT roundScoreID FROM roundScore WHERE participationID = ? AND roundID = ?",
       [participationID, roundID]
     );
 
@@ -200,7 +206,7 @@ exports.saveRoundScore = async (req, res) => {
       res.json({ success: true, roundScoreID: result.insertId });
     }
   } catch (error) {
-    console.error('Save round score error:', error);
-    res.status(500).json({ error: 'Failed to save round score' });
+    console.error("Save round score error:", error);
+    res.status(500).json({ error: "Failed to save round score" });
   }
 };
