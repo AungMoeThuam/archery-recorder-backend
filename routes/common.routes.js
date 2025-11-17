@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const commonController = require("../controllers/common.controller");
 const rankingController = require("../controllers/ranking.controller");
+const rangeController = require("../controllers/range.controller");
 
 // GET /api/competitions
 router.get("/competitions", commonController.getCompetitions);
@@ -23,6 +24,9 @@ router.get(
 
 // GET /api/round/:roundID
 router.get("/round/:roundID", commonController.getRoundById);
+
+// GET /api/round/:roundID/ranges
+router.get("/round/:roundID/ranges", rangeController.getRangesByRound);
 
 // POST /api/arrowStaging
 router.post("/arrowStaging", commonController.createArrowStaging);

@@ -148,3 +148,92 @@ exports.getParticipation = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch participation" });
   }
 };
+
+// Check if archer is eligible for a round (category matching)
+// Payload: roundID and archerID
+// Logic: Check if archer's participationCategory matches any roundCategory
+exports.checkRoundEligibility = async (req, res) => {
+  try {
+    const { roundID, archerID } = req.query;
+
+    if (!roundID || !archerID) {
+      return res
+        .status(400)
+        .json({ error: "roundID and archerID are required" });
+    }
+
+    // Get all round categories
+    const [roundCategories] = await db.query(
+      `SELECT categoryID FROM roundCategory WHERE roundID = ?`,
+      [roundID]
+    );
+
+    if (roundCategories.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "Round not found or has no categories" });
+    }
+
+    // Get all participation records for this archer
+    const [participations] = await db.query(
+      `SELECT participationID FROM participation WHERE archerID = ?`,
+      [archerID]
+    );
+
+    if (participations.length === 0) {
+      return res.json({
+        eligible: false,
+        message: "Archer has no participation records",
+      });
+    }
+
+    // Get all participation categories for this archer
+    const participationIDs = participations.map((p) => p.participationID);
+    const placeholders = participationIDs.map(() => "?").join(",");
+    const [archerCategories] = await db.query(
+      `SELECT DISTINCT categoryID FROM participationCategory WHERE participationID IN (${placeholders})`,
+      participationIDs
+    );
+
+    // Check if any archer category matches any round category
+    const archerCategoryIDs = new Set(
+      archerCategories.map((ac) => ac.categoryID)
+    );
+    const roundCategoryIDs = new Set(
+      roundCategories.map((rc) => rc.categoryID)
+    );
+
+    const hasMatch = Array.from(archerCategoryIDs).some((id) =>
+      roundCategoryIDs.has(id)
+    );
+
+    // Get detailed info for the response
+    const [archerInfo] = await db.query(
+      `SELECT archerFirstName, archerLastName FROM archer WHERE archerID = ?`,
+      [archerID]
+    );
+
+    const [roundInfo] = await db.query(
+      `SELECT roundID, roundType FROM round WHERE roundID = ?`,
+      [roundID]
+    );
+
+    res.json({
+      archerID: parseInt(archerID),
+      archerName: archerInfo[0]
+        ? `${archerInfo[0].archerFirstName} ${archerInfo[0].archerLastName}`
+        : "Unknown",
+      roundID: parseInt(roundID),
+      roundType: roundInfo[0]?.roundType || "Unknown",
+      eligible: hasMatch,
+      archerCategories: Array.from(archerCategoryIDs),
+      roundCategories: Array.from(roundCategoryIDs),
+      message: hasMatch
+        ? "Archer is eligible for this round"
+        : "Archer is not eligible for this round (category mismatch)",
+    });
+  } catch (error) {
+    console.error("Check round eligibility error:", error);
+    res.status(500).json({ error: "Failed to check round eligibility" });
+  }
+};
