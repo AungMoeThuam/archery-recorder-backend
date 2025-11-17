@@ -150,16 +150,16 @@ exports.getParticipation = async (req, res) => {
 };
 
 // Check if archer is eligible for a round (category matching)
-// Payload: roundID and archerID
+// Payload: roundID and participationID only
 // Logic: Check if archer's participationCategory matches any roundCategory
 exports.checkRoundEligibility = async (req, res) => {
   try {
-    const { roundID, archerID } = req.query;
+    const { roundID, participationID } = req.query;
 
-    if (!roundID || !archerID) {
-      return res
-        .status(400)
-        .json({ error: "roundID and archerID are required" });
+    if (!roundID || !participationID) {
+      return res.status(400).json({
+        error: "roundID and participationID are required",
+      });
     }
 
     // Get all round categories
@@ -174,26 +174,20 @@ exports.checkRoundEligibility = async (req, res) => {
         .json({ error: "Round not found or has no categories" });
     }
 
-    // Get all participation records for this archer
-    const [participations] = await db.query(
-      `SELECT participationID FROM participation WHERE archerID = ?`,
-      [archerID]
+    // Get participation categories for this participation
+    const [archerCategories] = await db.query(
+      `SELECT DISTINCT categoryID FROM participationCategory WHERE participationID = ?`,
+      [participationID]
     );
 
-    if (participations.length === 0) {
+    if (archerCategories.length === 0) {
       return res.json({
+        participationID: parseInt(participationID),
+        roundID: parseInt(roundID),
         eligible: false,
-        message: "Archer has no participation records",
+        message: "Participation has no categories",
       });
     }
-
-    // Get all participation categories for this archer
-    const participationIDs = participations.map((p) => p.participationID);
-    const placeholders = participationIDs.map(() => "?").join(",");
-    const [archerCategories] = await db.query(
-      `SELECT DISTINCT categoryID FROM participationCategory WHERE participationID IN (${placeholders})`,
-      participationIDs
-    );
 
     // Check if any archer category matches any round category
     const archerCategoryIDs = new Set(
@@ -207,27 +201,17 @@ exports.checkRoundEligibility = async (req, res) => {
       roundCategoryIDs.has(id)
     );
 
-    // Get detailed info for the response
-    const [archerInfo] = await db.query(
-      `SELECT archerFirstName, archerLastName FROM archer WHERE archerID = ?`,
-      [archerID]
-    );
-
+    // Get archer and round info for response
     const [roundInfo] = await db.query(
       `SELECT roundID, roundType FROM round WHERE roundID = ?`,
       [roundID]
     );
 
     res.json({
-      archerID: parseInt(archerID),
-      archerName: archerInfo[0]
-        ? `${archerInfo[0].archerFirstName} ${archerInfo[0].archerLastName}`
-        : "Unknown",
+      participationID: parseInt(participationID),
       roundID: parseInt(roundID),
       roundType: roundInfo[0]?.roundType || "Unknown",
       eligible: hasMatch,
-      archerCategories: Array.from(archerCategoryIDs),
-      roundCategories: Array.from(roundCategoryIDs),
       message: hasMatch
         ? "Archer is eligible for this round"
         : "Archer is not eligible for this round (category mismatch)",
