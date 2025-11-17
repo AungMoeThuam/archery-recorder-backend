@@ -1,23 +1,32 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const recorderController = require('../controllers/recorder.controller');
+const recorderController = require("../controllers/recorder.controller");
 
 // POST /api/recorder/login
-router.post('/login', recorderController.login);
+router.post("/login", recorderController.login);
 
 // GET /api/recorder/pending/:roundID
-router.get('/pending/:roundID', recorderController.getPendingScores);
+// router.get("/pending/:roundID", recorderController.getPendingScores);
+
+// GET /api/recorder/ends/pending
+router.get("/ends/pending", recorderController.getPendingEndScores);
 
 // GET /api/recorder/verify/:participationID/:roundID
-router.get('/verify/:participationID/:roundID', recorderController.getVerificationData);
+router.get(
+  "/verify/:participationID/:roundID",
+  recorderController.getVerificationData
+);
 
 // PUT /api/recorder/arrowStaging/:arrowStagingID
-router.put('/arrowStaging/:arrowStagingID', recorderController.updateArrowStaging);
+router.put(
+  "/arrowStaging/:arrowStagingID",
+  recorderController.updateArrowStaging
+);
 
 // POST /api/recorder/confirm
-router.post('/confirm', recorderController.confirmScores);
+router.post("/confirm", recorderController.confirmEndScores);
 
 // DELETE /api/recorder/reject
-router.delete('/reject', recorderController.rejectScores);
+router.delete("/reject", recorderController.rejectScores);
 
 module.exports = router;

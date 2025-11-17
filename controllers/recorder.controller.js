@@ -22,38 +22,64 @@ exports.login = async (req, res) => {
 };
 
 // Get pending scores for a round
-exports.getPendingScores = async (req, res) => {
+exports.getPendingEndScores = async (req, res) => {
+  // Assuming roundID is passed as a URL parameter, as in the previous context
   try {
-    const { roundID } = req.params;
+    // const { roundID } = req.params;
+
+    // if (!roundID) {
+    //   return res.status(400).json({ error: "Missing roundID parameter." });
+    // }
 
     const query = `
-      SELECT 
-        p.participationID,
-        a.archerID,
-        a.archerFirstName,
-        a.archerLastName,
-        a.archerGender,
-        a.archerNationality,
-        COUNT(DISTINCT ast.endOrder) as endsCompleted,
-        12 as totalEnds,
-        CASE 
-          WHEN COUNT(DISTINCT ast.endOrder) = 12 THEN 'complete'
-          ELSE 'in_progress'
-        END as status,
-        GROUP_CONCAT(DISTINCT cat.equipment ORDER BY cat.equipment) as category
-      FROM participation p
-      JOIN archer a ON p.archerID = a.archerID
-      LEFT JOIN arrowStaging ast ON p.participationID = ast.participationID AND ast.roundID = ? AND ast.stagingStatus = 'pending'
-      LEFT JOIN participationCategory pc ON p.participationID = pc.participationID
-      LEFT JOIN category cat ON pc.categoryID = cat.categoryID
-      WHERE p.competitionID = (SELECT competitionID FROM round WHERE roundID = ?)
-      GROUP BY p.participationID
-      HAVING endsCompleted > 0
-      ORDER BY status DESC, a.archerLastName
+      SELECT
+        roundID,
+        endOrder,
+        distance,
+        participationID,
+        -- Group all arrowScores for a single end into a comma-separated string, ordered by their recording time or arrow ID
+        GROUP_CONCAT(arrowScore ORDER BY arrowStagingID ASC) AS arrows_string
+      FROM arrowStaging
+      WHERE 
+      stagingStatus = 'pending' -- Only fetch scores waiting for approval
+      GROUP BY 
+        roundID, 
+        endOrder, 
+        distance, 
+        participationID
+      ORDER BY 
+        participationID, 
+        endOrder;
     `;
 
-    const [rows] = await db.query(query, [roundID, roundID]);
-    res.json(rows);
+    // Execute the query
+    const [rows] = await db.query(query);
+
+    // Post-process the result to convert the comma-separated string into the desired array format
+    const formattedScores = rows.map((row) => {
+      // Split the string into an array and process each score element
+      const arrowsArray = row.arrows_string
+        ? row.arrows_string.split(",").map((score) => {
+            const trimmedScore = score.trim();
+            const numericScore = parseInt(trimmedScore, 10);
+
+            // If the score is a valid number (e.g., '10', '5'), return it as a Number.
+            // Otherwise, return it as a String (e.g., 'X', 'M').
+            return isNaN(numericScore) ? trimmedScore : numericScore;
+          })
+        : [];
+
+      return {
+        roundID: row.roundID,
+        endOrder: row.endOrder,
+        distance: row.distance,
+        participationID: row.participationID,
+        arrows: arrowsArray,
+        stagingStatus: "pending",
+      };
+    });
+
+    res.json(formattedScores);
   } catch (error) {
     console.error("Get pending scores error:", error);
     res.status(500).json({ error: "Failed to fetch pending scores" });
@@ -154,7 +180,7 @@ exports.updateArrowStaging = async (req, res) => {
 };
 
 // Confirm all scores
-exports.confirmScores = async (req, res) => {
+exports.confirmEndScores = async (req, res) => {
   try {
     const {
       participationID,
