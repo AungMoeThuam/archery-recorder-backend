@@ -221,3 +221,76 @@ exports.checkRoundEligibility = async (req, res) => {
     res.status(500).json({ error: "Failed to check round eligibility" });
   }
 };
+
+// Record arrows to staging table
+// Payload: { roundID, participationID, distance, target, endOrder, arrows: [] }
+// Returns: Same payload with additional "recorded" boolean field
+exports.recordEndArrows = async (req, res) => {
+  try {
+    const { roundID, participationID, distance, target, endOrder, arrows } =
+      req.body;
+
+    // Validate required fields
+    if (
+      !roundID ||
+      !participationID ||
+      !distance ||
+      !target ||
+      !endOrder ||
+      !arrows ||
+      !Array.isArray(arrows)
+    ) {
+      return res.status(400).json({
+        error:
+          "roundID, participationID, distance, target, endOrder, and arrows array are required",
+      });
+    }
+
+    // Insert each arrow into arrowStaging table
+    for (const arrow of arrows) {
+      // Determine arrowScore and isX
+      let arrowScore = 0;
+      let isX = 0;
+
+      if (arrow === "X") {
+        arrowScore = 10;
+        isX = 1;
+      } else if (arrow === "M") {
+        arrowScore = 0;
+        isX = 0;
+      } else {
+        arrowScore = parseInt(arrow);
+        isX = 0;
+      }
+
+      await db.query(
+        `INSERT INTO arrowStaging (roundID, participationID, distance, endOrder, arrowScore, isX, stagingStatus, date)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())`,
+        [roundID, participationID, distance, endOrder, arrowScore, isX]
+      );
+    }
+
+    // Return the same structure with recorded field
+    res.json({
+      roundID,
+      participationID,
+      distance,
+      target,
+      endOrder,
+      arrows,
+      recorded: true,
+    });
+  } catch (error) {
+    console.error("Record arrows error:", error);
+    res.status(500).json({
+      roundID: req.body.roundID,
+      participationID: req.body.participationID,
+      distance: req.body.distance,
+      target: req.body.target,
+      endOrder: req.body.endOrder,
+      arrows: req.body.arrows,
+      recorded: false,
+      error: "Failed to record arrows",
+    });
+  }
+};
