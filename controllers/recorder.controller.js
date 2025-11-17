@@ -23,61 +23,63 @@ exports.login = async (req, res) => {
 
 // Get pending scores for a round
 exports.getPendingEndScores = async (req, res) => {
-  // Assuming roundID is passed as a URL parameter, as in the previous context
   try {
-    // const { roundID } = req.params;
-
-    // if (!roundID) {
-    //   return res.status(400).json({ error: "Missing roundID parameter." });
-    // }
-
     const query = `
       SELECT
+        arrowStagingID,
         roundID,
         endOrder,
         distance,
         participationID,
-        -- Group all arrowScores for a single end into a comma-separated string, ordered by their recording time or arrow ID
-        GROUP_CONCAT(arrowScore ORDER BY arrowStagingID ASC) AS arrows_string
+        arrowScore,
+        isX
       FROM arrowStaging
-      WHERE 
-      stagingStatus = 'pending' -- Only fetch scores waiting for approval
-      GROUP BY 
-        roundID, 
-        endOrder, 
-        distance, 
-        participationID
-      ORDER BY 
-        participationID, 
-        endOrder;
+      WHERE
+        stagingStatus = 'pending'
+      ORDER BY
+        participationID,
+        endOrder,
+        arrowStagingID;
     `;
 
     // Execute the query
     const [rows] = await db.query(query);
 
-    // Post-process the result to convert the comma-separated string into the desired array format
-    const formattedScores = rows.map((row) => {
-      // Split the string into an array and process each score element
-      const arrowsArray = row.arrows_string
-        ? row.arrows_string.split(",").map((score) => {
-            const trimmedScore = score.trim();
-            const numericScore = parseInt(trimmedScore, 10);
+    // Group arrows by roundID, participationID, endOrder, distance
+    const groupedScores = {};
 
-            // If the score is a valid number (e.g., '10', '5'), return it as a Number.
-            // Otherwise, return it as a String (e.g., 'X', 'M').
-            return isNaN(numericScore) ? trimmedScore : numericScore;
-          })
-        : [];
+    rows.forEach((row) => {
+      const key = `${row.roundID}-${row.participationID}-${row.endOrder}-${row.distance}`;
 
-      return {
-        roundID: row.roundID,
-        endOrder: row.endOrder,
-        distance: row.distance,
-        participationID: row.participationID,
-        arrows: arrowsArray,
-        stagingStatus: "pending",
-      };
+      if (!groupedScores[key]) {
+        groupedScores[key] = {
+          roundID: row.roundID,
+          endOrder: row.endOrder,
+          distance: row.distance,
+          participationID: row.participationID,
+          arrows: [],
+          stagingStatus: "pending",
+        };
+      }
+
+      // Convert score: isX=1 -> "X", score=0 -> "M", otherwise numeric
+      let displayScore;
+      if (row.isX === 1) {
+        displayScore = "X";
+      } else if (row.arrowScore === 0) {
+        displayScore = "M";
+      } else {
+        displayScore = row.arrowScore;
+      }
+
+      groupedScores[key].arrows.push({
+        arrowStagingID: row.arrowStagingID,
+        arrowScore: displayScore,
+      });
     });
+
+    // Convert grouped object to array
+    const formattedScores = Object.values(groupedScores);
 
     res.json(formattedScores);
   } catch (error) {
@@ -86,87 +88,138 @@ exports.getPendingEndScores = async (req, res) => {
   }
 };
 
-// Get score verification data
-exports.getVerificationData = async (req, res) => {
+// Update arrow staging and roundScore
+exports.updateRoundScore = async (req, res) => {
+  const connection = await db.getConnection();
+
   try {
-    const { participationID, roundID } = req.params;
+    const {
+      roundID,
+      participationID,
+      distance,
+      endOrder,
+      arrows,
+      stagingStatus,
+    } = req.body;
 
-    // Get archer details
-    const [archerData] = await db.query(
-      `SELECT 
-        a.archerID,
-        a.archerFirstName,
-        a.archerLastName,
-        a.archerGender,
-        a.archerDateOfBirth,
-        a.archerEmail,
-        a.archerNationality
-      FROM participation p
-      JOIN archer a ON p.archerID = a.archerID
-      WHERE p.participationID = ?`,
-      [participationID]
-    );
-
-    if (archerData.length === 0) {
-      return res.status(404).json({ error: "Archer not found" });
+    // Validate required fields
+    if (
+      !roundID ||
+      !participationID ||
+      !distance ||
+      !endOrder ||
+      !stagingStatus ||
+      !Array.isArray(arrows)
+    ) {
+      return res.status(400).json({
+        error:
+          "roundID, participationID, distance, endOrder, arrows, and stagingStatus are required",
+      });
     }
 
-    // Get round details
-    const [roundData] = await db.query(
-      `SELECT 
-        r.roundID,
-        r.roundType,
-        r.roundDate,
-        r.competitionID,
-        rng.distance,
-        rng.targetSize
-      FROM round r
-      LEFT JOIN range rng ON r.roundType = rng.roundType
-      WHERE r.roundID = ?
-      LIMIT 1`,
-      [roundID]
-    );
+    // Start transaction
+    await connection.beginTransaction();
 
-    if (roundData.length === 0) {
-      return res.status(404).json({ error: "Round not found" });
+    // Step 1: Update each arrow individually
+    for (const arrow of arrows) {
+      if (!arrow.arrowStagingID) {
+        await connection.rollback();
+        return res.status(400).json({
+          error: "Each arrow must have an arrowStagingID",
+        });
+      }
+
+      // Convert arrow score to database format
+      let arrowScore;
+      let isX;
+
+      if (arrow.arrowScore === "X") {
+        arrowScore = 10;
+        isX = 1;
+      } else if (arrow.arrowScore === "M") {
+        arrowScore = 0;
+        isX = 0;
+      } else {
+        arrowScore = parseInt(arrow.arrowScore);
+        isX = 0;
+      }
+
+      // Update the arrow
+      await connection.query(
+        `UPDATE arrowStaging
+         SET arrowScore = ?, isX = ?, stagingStatus = ?
+         WHERE arrowStagingID = ?`,
+        [arrowScore, isX, stagingStatus, arrow.arrowStagingID]
+      );
     }
 
-    // Get all arrows for this participation and round
-    const [arrows] = await db.query(
-      `SELECT 
-        arrowStagingID,
-        roundID,
-        participationID,
-        distance,
-        endOrder,
-        arrowScore,
-        stagingStatus,
-        isX
-      FROM arrowStaging
-      WHERE participationID = ? AND roundID = ?
-      ORDER BY endOrder, arrowStagingID`,
+    // Step 2: Calculate totals from ALL confirmed arrows for this roundID + participationID
+    const [totals] = await connection.query(
+      `SELECT
+        COALESCE(SUM(arrowScore), 0) as totalScore,
+        COALESCE(SUM(CASE WHEN isX = 1 THEN 1 ELSE 0 END), 0) as totalX,
+        COALESCE(SUM(CASE WHEN arrowScore = 10 THEN 1 ELSE 0 END), 0) as totalTen
+       FROM arrowStaging
+       WHERE roundID = ? AND participationID = ? AND stagingStatus = 'confirmed'`,
+      [roundID, participationID]
+    );
+
+    const { totalScore, totalX, totalTen } = totals[0];
+
+    // Step 3: Check if roundScore exists
+    const [existing] = await connection.query(
+      `SELECT roundScoreID FROM roundScore WHERE participationID = ? AND roundID = ?`,
       [participationID, roundID]
     );
 
+    let roundScoreID;
+    if (existing.length > 0) {
+      // Update existing roundScore
+      await connection.query(
+        `UPDATE roundScore
+         SET totalScore = ?, totalX = ?, totalTen = ?, dateRecorded = NOW()
+         WHERE roundScoreID = ?`,
+        [totalScore, totalX, totalTen, existing[0].roundScoreID]
+      );
+      roundScoreID = existing[0].roundScoreID;
+    } else {
+      // Insert new roundScore
+      const [result] = await connection.query(
+        `INSERT INTO roundScore (participationID, roundID, totalScore, totalX, totalTen, dateRecorded)
+         VALUES (?, ?, ?, ?, ?, NOW())`,
+        [participationID, roundID, totalScore, totalX, totalTen]
+      );
+      roundScoreID = result.insertId;
+    }
+
+    // Commit transaction
+    await connection.commit();
+
     res.json({
-      archer: archerData[0],
-      round: roundData[0],
-      arrows: arrows,
+      success: true,
+      roundScoreID,
+      totalScore,
+      totalX,
+      totalTen,
     });
   } catch (error) {
-    console.error("Get verification data error:", error);
-    res.status(500).json({ error: "Failed to fetch verification data" });
+    // Rollback transaction on error
+    await connection.rollback();
+    console.error("Update round score error:", error);
+    res.status(500).json({ error: "Failed to update round score" });
+  } finally {
+    connection.release();
   }
 };
 
-// Update arrow staging
+// Legacy update arrow staging (keeping for backwards compatibility if needed)
 exports.updateArrowStaging = async (req, res) => {
   try {
     const { arrowStagingID } = req.params;
     const { stagingStatus, recorderID, arrowScore } = req.body;
 
     await db.query(
-      `UPDATE arrowStaging 
+      `UPDATE arrowStaging
        SET stagingStatus = ?, recorderID = ?, arrowScore = ?
        WHERE arrowStagingID = ?`,
       [stagingStatus, recorderID, arrowScore, arrowStagingID]
@@ -226,22 +279,5 @@ exports.confirmEndScores = async (req, res) => {
   } catch (error) {
     console.error("Confirm scores error:", error);
     res.status(500).json({ error: "Failed to confirm scores" });
-  }
-};
-
-// Reject scores
-exports.rejectScores = async (req, res) => {
-  try {
-    const { participationID, roundID } = req.body;
-
-    await db.query(
-      "DELETE FROM arrowStaging WHERE participationID = ? AND roundID = ?",
-      [participationID, roundID]
-    );
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Reject scores error:", error);
-    res.status(500).json({ error: "Failed to reject scores" });
   }
 };
