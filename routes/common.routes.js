@@ -28,13 +28,4 @@ router.get("/round/:roundID", commonController.getRoundById);
 // GET /api/round/:roundID/ranges
 router.get("/round/:roundID/ranges", rangeController.getRangesByRound);
 
-// POST /api/arrowStaging
-router.post("/arrowStaging", commonController.createArrowStaging);
-
-// GET /api/arrowStaging
-router.get("/arrowStaging", commonController.getArrowStaging);
-
-// POST /api/roundScore
-router.post("/roundScore", commonController.saveRoundScore);
-
 module.exports = router;
