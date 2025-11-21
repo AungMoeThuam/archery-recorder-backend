@@ -17,6 +17,9 @@ router.get("/participation", archerController.getParticipation);
 // GET /api/archer/round/eligibility
 router.get("/round/eligibility", archerController.checkRoundEligibility);
 
+// GET /api/archer/round/submitted-scores
+router.get("/round/submitted-scores", archerController.getSubmittedScores);
+
 // POST /api/archer/round/endscore-staging
 router.post("/round/endscore-staging", archerController.recordEndArrows);
 

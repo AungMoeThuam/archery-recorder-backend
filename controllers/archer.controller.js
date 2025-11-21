@@ -294,3 +294,71 @@ exports.recordEndArrows = async (req, res) => {
     });
   }
 };
+
+// Get submitted scores for an archer in a specific round
+// Query params: participationID, roundID
+// Returns: Array of submitted ends with arrows
+exports.getSubmittedScores = async (req, res) => {
+  try {
+    const { participationID, roundID } = req.query;
+
+    // Validate required fields
+    if (!participationID || !roundID) {
+      return res.status(400).json({
+        error: "participationID and roundID are required",
+      });
+    }
+
+    // Get all submitted arrows from arrowStaging
+    const [arrows] = await db.query(
+      `SELECT
+        arrowStagingID,
+        distance,
+        endOrder,
+        arrowScore,
+        isX
+      FROM arrowStaging
+      WHERE participationID = ? AND roundID = ?
+      ORDER BY distance, endOrder, arrowStagingID`,
+      [participationID, roundID]
+    );
+
+    // Group arrows by distance and endOrder
+    const groupedEnds = {};
+
+    arrows.forEach((arrow) => {
+      const key = `${arrow.distance}-${arrow.endOrder}`;
+
+      if (!groupedEnds[key]) {
+        groupedEnds[key] = {
+          distance: arrow.distance,
+          endOrder: arrow.endOrder,
+          arrows: [],
+          submitted: true,
+        };
+      }
+
+      // Convert score: isX=1 -> "X", score=0 -> "M", otherwise numeric
+      let displayScore;
+      if (arrow.isX === 1) {
+        displayScore = "X";
+      } else if (arrow.arrowScore === 0) {
+        displayScore = "M";
+      } else {
+        displayScore = arrow.arrowScore;
+      }
+
+      groupedEnds[key].arrows.push(displayScore);
+    });
+
+    // Convert grouped object to array
+    const submittedEnds = Object.values(groupedEnds);
+
+    res.json({
+      submittedEnds,
+    });
+  } catch (error) {
+    console.error("Get submitted scores error:", error);
+    res.status(500).json({ error: "Failed to fetch submitted scores" });
+  }
+};
